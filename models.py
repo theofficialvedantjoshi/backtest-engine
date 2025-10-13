@@ -22,6 +22,8 @@ class Signal(Enum):
     CLOSE_BUY = 2
     CLOSE_SELL = -2
     CLOSE_ALL = 0
+    EDIT_SL = 3
+    EDIT_LIMIT = -3
 
 
 class Order(BaseModel):
