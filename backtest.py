@@ -193,6 +193,16 @@ class Backtester:
             ):  # Close All Positions
                 for trade_id, trade in open_trades.iterrows():
                     self.orders.close_trade(trade_id=trade_id)
+            elif data["Signal"] == Signal.EDIT_SL.value and not open_trades.empty:
+                for trade_id, trade in open_trades.iterrows():
+                    self.orders.edit_sl(
+                        trade_id=trade_id, stop_loss=float(data["Signal_Stop_Loss"])
+                    )
+            elif data["Signal"] == Signal.EDIT_LIMIT.value and not open_trades.empty:
+                for trade_id, trade in open_trades.iterrows():
+                    self.orders.edit_limit(
+                        trade_id=trade_id, limit=float(data["Signal_Limit"])
+                    )
 
             for order in self.orders.orders:
                 if order.action == OrderAction.ENTRY:
@@ -231,7 +241,6 @@ class Backtester:
                             "Trade ID must be provided for closing a trade."
                         )
                     self.trades.loc[trade_id, ["Stop_Loss"]] = [order.stop_loss]
-
                 elif order.action == OrderAction.EDIT_LIMIT:
                     trade_id = order.trade_id
                     if trade_id is None:
@@ -310,14 +319,18 @@ class Backtester:
 
         return self.trades
 
-    def evaluate_backtest(self, periods_per_year: int = 252) -> None:
+    def evaluate_backtest(self, periods_per_year: int = 252) -> dict:
+        results: dict = dict()
+
         print("RESULTS")
         print("=" * 40)
 
         biggest_win = self.trades["Net_Profit"].max()
+        results["biggest_win"] = biggest_win
         print(f"Biggest Win: {biggest_win:.2f} {self.currency}")
 
         biggest_loss = self.trades["Net_Profit"].min()
+        results["biggest_loss"] = biggest_loss
         print(f"Biggest Loss: {biggest_loss:.2f} {self.currency}")
 
         win_trades = self.trades[self.trades["Net_Profit"] > 0]
@@ -327,15 +340,19 @@ class Backtester:
         display(loss_trades)
 
         avg_win = win_trades["Net_Profit"].mean()
+        results["avg_win"] = avg_win
         print(f"Average Win: {avg_win:.2f} {self.currency}")
 
         avg_loss = loss_trades["Net_Profit"].mean()
+        results["avg_loss"] = avg_loss
         print(f"Average Loss: {avg_loss:.2f} {self.currency}")
 
         total_win_trades = win_trades.shape[0]
+        results["total_win_trades"] = total_win_trades
         print(f"Total Winning Trades: {total_win_trades}")
 
         total_loss_trades = loss_trades.shape[0]
+        results["total_loss_trades"] = total_loss_trades
         print(f"Total Losing Trades: {total_loss_trades}")
 
         if (total_win_trades + total_loss_trades) == 0:
@@ -343,13 +360,18 @@ class Backtester:
         else:
             win_rate = total_win_trades / (total_win_trades + total_loss_trades) * 100
             print(f"Win Rate: {win_rate:.2f}%")
+        results["win_rate"] = win_rate
 
         gross_profit = win_trades["Net_Profit"].sum()
         gross_loss = abs(loss_trades["Net_Profit"].sum())
+        results["gross_profit"] = gross_profit
+        results["gross_loss"] = gross_loss
         if gross_loss > 0.0:
             profit_factor = gross_profit / gross_loss
         else:
             profit_factor = float("inf")
+
+        results["profit_factor"] = profit_factor
         print(f"Profit Factor: {profit_factor:.2f}")
 
         if avg_loss == 0.0:
@@ -357,6 +379,7 @@ class Backtester:
         else:
             risk_reward_ratio = abs(avg_win / avg_loss)
             print(f"Risk-Reward Ratio: {risk_reward_ratio:.2f}")
+        results["risk_reward_ratio"] = risk_reward_ratio
 
         trades_by_ordertype = self.trades.groupby("Order_Type", as_index=False)[
             "Net_Profit"
@@ -376,6 +399,7 @@ class Backtester:
         display(plot_drawdown)
 
         max_drawdown = self.trades["Drawdown"].max()
+        results["max_drawdown"] = max_drawdown
         print(f"Maximum Drawdown: {max_drawdown:.2f} {self.currency}")
 
         shifted_balance = self.trades["Balance"].shift(1).fillna(self.starting_balance)
@@ -384,6 +408,7 @@ class Backtester:
             sharpe_ratio = 0.0
         else:
             sharpe_ratio = returns.mean() / returns.std() * np.sqrt(periods_per_year)
+        results["sharpe_ratio"] = sharpe_ratio
         print(f"Sharpe Ratio: {sharpe_ratio:.2f}")
 
         negative_returns = returns[returns < 0]
@@ -393,15 +418,20 @@ class Backtester:
             sortino_ratio = (
                 returns.mean() / negative_returns.std() * np.sqrt(periods_per_year)
             )
+        results["sortino_ratio"] = sortino_ratio
         print(f"Sortino Ratio: {sortino_ratio:.2f}")
 
         total_net_profit = self.trades["Net_Profit"].sum()
+        results["total_net_profit"] = total_net_profit
         print(f"Total Net Profit: {total_net_profit:.2f} {self.currency}")
 
         final_balance = self.starting_balance + total_net_profit
+        results["final_balance"] = final_balance
         print(f"Final Balance: {final_balance:.2f} {self.currency}")
 
         print("=" * 40)
+
+        return results
 
     def visualize_backtest(self, num_trades: int = 0) -> go.Figure:
         fig = go.Figure(
@@ -469,6 +499,7 @@ class Backtester:
         trades = self.trades.copy()
         trades["Open_Time"] = trades["Open_Time"].astype(str)
         trades["Close_Time"] = trades["Close_Time"].astype(str)
+        results = self.evaluate_backtest()
 
         data = {
             "symbol": symbol,
@@ -476,6 +507,7 @@ class Backtester:
             "exchange_rate": self.exchange_rate,
             "ohlc_history": ohlc_data.to_dict("records"),
             "trade_history": trades.to_dict("records"),
+            "results": results,
         }
 
         with open(filename, "w") as jsonfile:

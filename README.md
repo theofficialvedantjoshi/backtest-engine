@@ -28,7 +28,7 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for package management
 
 ## TODO
 
+- [X] Add support for edit stop loss and edit limit orders using signals.
 - [ ] Add starter example strategies.
 - [ ] Add support to export plots as HTML or PNG.
 - [ ] Generate a starter signal dataframe to allow users to backtest instantly.
-- [ ] Add support for edit stop loss and edit limit orders using signals.
