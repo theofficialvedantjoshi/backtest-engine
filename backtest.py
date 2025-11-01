@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, cast
 
 import numpy as np
 import pandas as pd
@@ -6,8 +6,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 from IPython.display import display
+from pandera.errors import SchemaErrors
 
-from models import Order, OrderAction, OrderType, Signal
+from models import OHLCSchema, Order, OrderAction, OrderType, Signal, TradesSchema
 
 pio.templates.default = "plotly_dark"
 
@@ -83,27 +84,7 @@ class Backtester:
         self.set_ohlc_data(ohlc_data)
 
         self.orders: Orders = Orders()
-        self.trades: pd.DataFrame = pd.DataFrame(
-            columns=[
-                "State",
-                "Order_Type",
-                "Volume",
-                "Open_Time",
-                "Open_Price",
-                "Close_Time",
-                "Close_Price",
-                "Stop_Loss",
-                "Limit",
-                "Info",
-                "Profit",
-                "Commission",
-                "Net_Profit",
-                "Cumulative_Profit",
-                "Balance",
-                "Drawdown",
-            ],
-            index=pd.Index([], dtype="int64", name="Trade_ID"),
-        )
+        self.trades: pd.DataFrame = cast(pd.DataFrame, TradesSchema.example(size=0))
 
     def set_starting_balance(
         self, starting_balance: float, currency: str = "INR"
@@ -122,23 +103,11 @@ class Backtester:
         self.commission = -1.0 * commission
 
     def set_ohlc_data(self, ohlc_data: pd.DataFrame) -> None:
-        required_columns = [
-            "Open",
-            "High",
-            "Low",
-            "Close",
-            "Signal",
-            "Signal_Volume",
-            "Signal_Stop_Loss",
-            "Signal_Limit",
-        ]
-        if not all(col in ohlc_data.columns for col in required_columns):
-            raise ValueError(
-                f"OHLC data must contain the following columns: {', '.join(required_columns)}"
-            )
-        if not pd.api.types.is_datetime64_any_dtype(ohlc_data.index):
-            raise ValueError("OHLC data index must be of datetime type.")
-        self.ohlc_data = ohlc_data
+        try:
+            validated_data = OHLCSchema.validate(ohlc_data.copy())
+            self.ohlc_data = validated_data
+        except SchemaErrors as e:
+            raise ValueError(f"OHLC data validation failed: {e}") from e
 
     def run_backtest(self) -> pd.DataFrame:
         for i in self.ohlc_data.index:
@@ -149,20 +118,24 @@ class Backtester:
             open_trades = self.trades[self.trades["State"] == "Open"]
 
             if (
-                data["Signal"] == Signal.BUY.value and open_trades.empty
+                data["Signal"] == Signal.BUY.value
+                and pd.notna(data["Signal_Volume"])
+                and open_trades.empty
             ):  # Open Long Position
                 self.orders.open_trade(
-                    volume=int(data["Signal_Volume"]),
+                    volume=data["Signal_Volume"],
                     order_type=OrderType.BUY,
                     stop_loss=float(data["Signal_Stop_Loss"]),
                     limit=float(data["Signal_Limit"]),
                     info="",
                 )
             elif (
-                data["Signal"] == Signal.SELL.value and open_trades.empty
+                data["Signal"] == Signal.SELL.value
+                and pd.notna(data["Signal_Volume"])
+                and open_trades.empty
             ):  # Open Short Position
                 self.orders.open_trade(
-                    volume=int(data["Signal_Volume"]),
+                    volume=data["Signal_Volume"],
                     order_type=OrderType.SELL,
                     stop_loss=float(data["Signal_Stop_Loss"]),
                     limit=float(data["Signal_Limit"]),
