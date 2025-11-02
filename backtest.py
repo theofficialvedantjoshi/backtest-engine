@@ -8,7 +8,16 @@ import plotly.io as pio
 from IPython.display import display
 from pandera.errors import SchemaErrors
 
-from models import OHLCSchema, Order, OrderAction, OrderType, Signal, TradesSchema
+from models import (
+    EditSignal,
+    EntrySignal,
+    ExitSignal,
+    OHLCSchema,
+    Order,
+    OrderAction,
+    OrderType,
+    TradesSchema,
+)
 
 pio.templates.default = "plotly_dark"
 
@@ -118,10 +127,10 @@ class Backtester:
             open_trades = self.trades[self.trades["State"] == "Open"]
 
             if (
-                data["Signal"] == Signal.BUY.value
-                and pd.notna(data["Signal_Volume"])
-                and open_trades.empty
+                data["Entry_Signal"] == EntrySignal.BUY.value
+                and data["Signal_Volume"] > 0
             ):  # Open Long Position
+                print("OPENING LONG")
                 self.orders.open_trade(
                     volume=data["Signal_Volume"],
                     order_type=OrderType.BUY,
@@ -130,10 +139,10 @@ class Backtester:
                     info="",
                 )
             elif (
-                data["Signal"] == Signal.SELL.value
-                and pd.notna(data["Signal_Volume"])
-                and open_trades.empty
+                data["Entry_Signal"] == EntrySignal.SELL.value
+                and data["Signal_Volume"] > 0
             ):  # Open Short Position
+                print("OPENING SHORT")
                 self.orders.open_trade(
                     volume=data["Signal_Volume"],
                     order_type=OrderType.SELL,
@@ -141,8 +150,9 @@ class Backtester:
                     limit=float(data["Signal_Limit"]),
                     info="",
                 )
-            elif (
-                data["Signal"] == Signal.CLOSE_BUY.value
+            if (
+                data["Exit_Signal"] == ExitSignal.CLOSE_BUY.value
+                and data["Signal_Volume"] > 0
                 and not open_trades[
                     open_trades["Order_Type"] == OrderType.BUY.value
                 ].empty
@@ -152,7 +162,8 @@ class Backtester:
                 ].iterrows():
                     self.orders.close_trade(trade_id=trade_id)
             elif (
-                data["Signal"] == Signal.CLOSE_SELL.value
+                data["Exit_Signal"] == ExitSignal.CLOSE_SELL.value
+                and data["Signal_Volume"] > 0
                 and not open_trades[
                     open_trades["Order_Type"] == OrderType.SELL.value
                 ].empty
@@ -162,16 +173,24 @@ class Backtester:
                 ].iterrows():
                     self.orders.close_trade(trade_id=trade_id)
             elif (
-                data["Signal"] == Signal.CLOSE_ALL.value and not open_trades.empty
+                data["Exit_Signal"] == ExitSignal.CLOSE_ALL.value
+                and pd.notna(data["Signal_Volume"])
+                and not open_trades.empty
             ):  # Close All Positions
                 for trade_id, trade in open_trades.iterrows():
                     self.orders.close_trade(trade_id=trade_id)
-            elif data["Signal"] == Signal.EDIT_SL.value and not open_trades.empty:
+            if (
+                data["Edit_Signal"] == EditSignal.EDIT_SL.value
+                and not open_trades.empty
+            ):
                 for trade_id, trade in open_trades.iterrows():
                     self.orders.edit_sl(
                         trade_id=trade_id, stop_loss=float(data["Signal_Stop_Loss"])
                     )
-            elif data["Signal"] == Signal.EDIT_LIMIT.value and not open_trades.empty:
+            elif (
+                data["Edit_Signal"] == EditSignal.EDIT_LIMIT.value
+                and not open_trades.empty
+            ):
                 for trade_id, trade in open_trades.iterrows():
                     self.orders.edit_limit(
                         trade_id=trade_id, limit=float(data["Signal_Limit"])
@@ -227,26 +246,26 @@ class Backtester:
             for idx in open_trades.index:
                 trade = open_trades.loc[idx]
                 if trade["Order_Type"] == OrderType.BUY.value:
-                    if trade["Stop_Loss"] >= data["Low"] and trade["Stop_Loss"] >= 0.0:
+                    if trade["Stop_Loss"] >= data["Low"] and trade["Stop_Loss"] != 0.0:
                         self.trades.loc[idx, ["State", "Close_Time", "Close_Price"]] = [
                             "Closed",
                             i,
                             trade["Stop_Loss"],
                         ]
-                    elif trade["Limit"] <= data["High"] and trade["Limit"] >= 0.0:
+                    elif trade["Limit"] <= data["High"] and trade["Limit"] != 0.0:
                         self.trades.loc[idx, ["State", "Close_Time", "Close_Price"]] = [
                             "Closed",
                             i,
                             trade["Limit"],
                         ]
                 elif trade["Order_Type"] == OrderType.SELL.value:
-                    if trade["Stop_Loss"] <= data["High"] and trade["Stop_Loss"] >= 0.0:
+                    if trade["Stop_Loss"] <= data["High"] and trade["Stop_Loss"] != 0.0:
                         self.trades.loc[idx, ["State", "Close_Time", "Close_Price"]] = [
                             "Closed",
                             i,
                             trade["Stop_Loss"],
                         ]
-                    elif trade["Limit"] >= data["Low"] and trade["Limit"] >= 0.0:
+                    elif trade["Limit"] >= data["Low"] and trade["Limit"] != 0.0:
                         self.trades.loc[idx, ["State", "Close_Time", "Close_Price"]] = [
                             "Closed",
                             i,
@@ -375,21 +394,33 @@ class Backtester:
         results["max_drawdown"] = max_drawdown
         print(f"Maximum Drawdown: {max_drawdown:.2f} {self.currency}")
 
-        shifted_balance = self.trades["Balance"].shift(1).fillna(self.starting_balance)
-        returns = self.trades["Net_Profit"] / shifted_balance
-        if returns.std() == 0.0:
+        equity_curve = self.trades.set_index("Close_Time")["Balance"].reindex(
+            self.ohlc_data.index
+        )
+        equity_curve = equity_curve.ffill().fillna(self.starting_balance)
+        display(self.plot_equity_curve(equity_curve))
+
+        periodic_returns = equity_curve.pct_change().fillna(0.0)
+
+        if periodic_returns.std() == 0.0:
             sharpe_ratio = 0.0
         else:
-            sharpe_ratio = returns.mean() / returns.std() * np.sqrt(periods_per_year)
+            sharpe_ratio = (
+                periodic_returns.mean()
+                / periodic_returns.std()
+                * np.sqrt(periods_per_year)
+            )
         results["sharpe_ratio"] = sharpe_ratio
         print(f"Sharpe Ratio: {sharpe_ratio:.2f}")
 
-        negative_returns = returns[returns < 0]
+        negative_returns = periodic_returns[periodic_returns < 0]
         if negative_returns.std() == 0.0:
             sortino_ratio = 0.0
         else:
             sortino_ratio = (
-                returns.mean() / negative_returns.std() * np.sqrt(periods_per_year)
+                periodic_returns.mean()
+                / negative_returns.std()
+                * np.sqrt(periods_per_year)
             )
         results["sortino_ratio"] = sortino_ratio
         print(f"Sortino Ratio: {sortino_ratio:.2f}")
@@ -463,16 +494,26 @@ class Backtester:
         fig = px.line(self.trades, x="Close_Time", y="Balance", title="Balance Graph")
         return fig
 
+    def plot_equity_curve(self, equity_curve: pd.Series) -> go.Figure:
+        fig = px.line(
+            equity_curve,
+            x=equity_curve.index,
+            y=equity_curve.values,
+            title="Equity Curve",
+            labels={"x": "Time", "y": "Equity"},
+        )
+        return fig
+
     def export_to_json(self, filename: str, symbol: str = "") -> bool:
         import ujson
 
         ohlc_data = self.ohlc_data.copy()
         ohlc_data.index = ohlc_data.index.astype(str)
 
+        results = self.evaluate_backtest()
         trades = self.trades.copy()
         trades["Open_Time"] = trades["Open_Time"].astype(str)
         trades["Close_Time"] = trades["Close_Time"].astype(str)
-        results = self.evaluate_backtest()
 
         data = {
             "symbol": symbol,

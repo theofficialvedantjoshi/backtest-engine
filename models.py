@@ -1,9 +1,11 @@
 from enum import Enum
 from typing import Any, Optional
 
-import pandera as pa
+import pandera.pandas as pa
 from pydantic import BaseModel
 import pandas as pd
+
+HOLD = 2
 
 
 class OrderType(Enum):
@@ -18,14 +20,20 @@ class OrderAction(Enum):
     EDIT_LIMIT = "Edit_Limit"
 
 
-class Signal(Enum):
+class EntrySignal(Enum):
     BUY = 1
     SELL = -1
-    CLOSE_BUY = 2
-    CLOSE_SELL = -2
+
+
+class ExitSignal(Enum):
+    CLOSE_BUY = 1
+    CLOSE_SELL = -1
     CLOSE_ALL = 0
-    EDIT_SL = 3
-    EDIT_LIMIT = -3
+
+
+class EditSignal(Enum):
+    EDIT_SL = 1
+    EDIT_LIMIT = -1
 
 
 class Order(BaseModel):
@@ -44,8 +52,12 @@ class OHLCSchema(pa.DataFrameModel):
     High: pa.typing.Series[float] = pa.Field(coerce=True)
     Low: pa.typing.Series[float] = pa.Field(coerce=True)
     Close: pa.typing.Series[float] = pa.Field(coerce=True)
-    Signal: pa.typing.Series[int] = pa.Field(nullable=True)
-    Signal_Volume: pa.typing.Series[int] = pa.Field(coerce=True, nullable=True)
+    Entry_Signal: pa.typing.Series[int] = pa.Field(nullable=True, default=HOLD)
+    Exit_Signal: pa.typing.Series[int] = pa.Field(nullable=True, default=HOLD)
+    Edit_Signal: pa.typing.Series[int] = pa.Field(nullable=True, default=HOLD)
+    Signal_Volume: pa.typing.Series[int] = pa.Field(
+        coerce=True, nullable=True, default=0
+    )
     Signal_Stop_Loss: pa.typing.Series[float] = pa.Field(
         coerce=True, nullable=True, default=0.0
     )
