@@ -121,7 +121,6 @@ class Backtester:
     def run_backtest(self) -> pd.DataFrame:
         for i in self.ohlc_data.index:
             data = self.ohlc_data.loc[i]
-            print("DATA", data)
             self.orders = Orders()
 
             open_trades = self.trades[self.trades["State"] == "Open"]
@@ -130,7 +129,6 @@ class Backtester:
                 data["Entry_Signal"] == EntrySignal.BUY.value
                 and data["Signal_Volume"] > 0
             ):  # Open Long Position
-                print("OPENING LONG")
                 self.orders.open_trade(
                     volume=data["Signal_Volume"],
                     order_type=OrderType.BUY,
@@ -142,7 +140,6 @@ class Backtester:
                 data["Entry_Signal"] == EntrySignal.SELL.value
                 and data["Signal_Volume"] > 0
             ):  # Open Short Position
-                print("OPENING SHORT")
                 self.orders.open_trade(
                     volume=data["Signal_Volume"],
                     order_type=OrderType.SELL,
