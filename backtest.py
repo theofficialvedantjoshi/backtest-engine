@@ -376,7 +376,7 @@ class Backtester:
         display(trades_by_ordertype)
 
         plot_ordertype = px.bar(trades_by_ordertype, x="Order_Type", y="Net_Profit")
-        display(plot_ordertype)
+        plot_ordertype.show("notebook")
 
         self.trades["Drawdown"] = (
             self.trades["Cumulative_Profit"].cummax() - self.trades["Cumulative_Profit"]
@@ -385,7 +385,7 @@ class Backtester:
         plot_drawdown = px.line(
             self.trades, x="Close_Time", y="Drawdown", title="Drawdown Over Time"
         )
-        display(plot_drawdown)
+        plot_drawdown.show("notebook")
 
         max_drawdown = self.trades["Drawdown"].max()
         results["max_drawdown"] = max_drawdown
@@ -395,7 +395,7 @@ class Backtester:
             self.ohlc_data.index
         )
         equity_curve = equity_curve.ffill().fillna(self.starting_balance)
-        display(self.plot_equity_curve(equity_curve))
+        self.plot_equity_curve(equity_curve).show("notebook")
 
         periodic_returns = equity_curve.pct_change().fillna(0.0)
 
@@ -434,7 +434,7 @@ class Backtester:
 
         return results
 
-    def visualize_backtest(self, num_trades: int = 0) -> go.Figure:
+    def visualize_backtest(self, num_trades: int = 0) -> None:
         fig = go.Figure(
             data=[
                 go.Candlestick(
@@ -479,7 +479,7 @@ class Backtester:
                     ),
                 )
 
-        return fig
+        fig.show("notebook")
 
     def plot_pnl(self) -> go.Figure:
         fig = px.line(
