@@ -26,9 +26,18 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for package management
    uv sync
    ```
 
+## Usage
+
+1. **Prepare your OHLC data**: Follow the data preprocessing logic in the `examples/crossover.ipynb` notebook.
+
+2. **Define your strategy**: Create entry, exit and edit signals based on your strategy logic. Refer to `models.py` for signal definitions.
+
+3. **Run the backtest**: Use the `Backtester` class to run your backtest with the prepared data and signals.
+
 ## TODO
 
 - [X] Add support for edit stop loss and edit limit orders using signals.
-- [ ] Add starter example strategies.
+- [X] Add starter example strategies.
+- [X] Generate a starter signal dataframe to allow users to backtest instantly.
 - [ ] Add support to export plots as HTML or PNG.
-- [ ] Generate a starter signal dataframe to allow users to backtest instantly.
+- [ ] Improve error handling and logging.
