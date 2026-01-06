@@ -41,5 +41,4 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for package management
 - [X] Generate a starter signal dataframe to allow users to backtest instantly.
 - [X] Add support for slippage.
 - [ ] Add support for execution delay.
-- [ ] Add support to export plots as HTML or PNG.
 - [ ] Improve error handling and logging.
