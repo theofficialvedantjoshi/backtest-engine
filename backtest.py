@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from IPython.display import display
 from pandera.errors import SchemaErrors
+from typeguard import typechecked
 
 from models import (
     EditSignal,
@@ -16,6 +17,7 @@ from models import (
     Order,
     OrderAction,
     OrderType,
+    Results,
     TradesSchema,
 )
 
@@ -71,6 +73,7 @@ class Orders:
         self.orders.append(order)
 
 
+@typechecked
 class Backtester:
 
     def __init__(
@@ -80,20 +83,25 @@ class Backtester:
         currency: str = "INR",
         exchange_rate: float = 1.0,
         commission: float = 0.0,
+        slippage: float = 0.0,
     ):
         self.exchange_rate: float
         self.commission: float
+        self.slippage: float
         self.currency: str
         self.starting_balance: float
+        self.balance: float
         self.ohlc_data: pd.DataFrame
 
         self.set_starting_balance(starting_balance, currency)
         self.set_exchange_rate(exchange_rate)
         self.set_commission(commission)
+        self.set_slippage(slippage)
         self.set_ohlc_data(ohlc_data)
 
         self.orders: Orders = Orders()
         self.trades: pd.DataFrame = cast(pd.DataFrame, TradesSchema.example(size=0))
+        self.trades.style.set_caption("TRADES")
 
     def set_starting_balance(
         self, starting_balance: float, currency: str = "INR"
@@ -109,7 +117,15 @@ class Backtester:
         self.exchange_rate = exchange_rate
 
     def set_commission(self, commission: float) -> None:
+        if commission < 0.0:
+            raise ValueError("Commission must be greater than or equal to 0.0")
         self.commission = -1.0 * commission
+
+    def set_slippage(self, slippage: float) -> None:
+        if 0.0 <= slippage <= 1.0:
+            self.slippage = slippage
+        else:
+            raise ValueError("Slippage must be between 0.0 and 1")
 
     def set_ohlc_data(self, ohlc_data: pd.DataFrame) -> None:
         try:
@@ -204,7 +220,12 @@ class Backtester:
                         "Order_Type": order.order_type.value,
                         "Volume": order.volume,
                         "Open_Time": i,
-                        "Open_Price": data["Open"],
+                        "Open_Price": data["Open"]
+                        * (
+                            1 + self.slippage
+                            if order.order_type == OrderType.BUY
+                            else 1 - self.slippage
+                        ),
                         "Close_Time": np.nan,
                         "Close_Price": np.nan,
                         "Stop_Loss": order.stop_loss,
@@ -222,7 +243,15 @@ class Backtester:
                     self.trades.loc[
                         trade_id,
                         ["State", "Close_Time", "Close_Price"],
-                    ] = ["Closed", i, data["Open"]]
+                    ] = [
+                        "Closed",
+                        i,
+                        (
+                            data["Open"] * (1 - self.slippage)
+                            if order.order_type == OrderType.BUY
+                            else data["Open"] * (1 + self.slippage)
+                        ),
+                    ]
                 elif order.action == OrderAction.EDIT_SL:
                     trade_id = order.trade_id
                     if trade_id is None:
@@ -308,7 +337,7 @@ class Backtester:
 
         return self.trades
 
-    def evaluate_backtest(self, periods_per_year: int = 252) -> dict:
+    def evaluate_backtest(self, periods_per_year: int = 252) -> Results:
         results: dict = dict()
 
         print("RESULTS")
@@ -432,7 +461,7 @@ class Backtester:
 
         print("=" * 40)
 
-        return results
+        return Results(**results)
 
     def visualize_backtest(self, num_trades: int = 0) -> None:
         fig = go.Figure(
@@ -518,7 +547,7 @@ class Backtester:
             "exchange_rate": self.exchange_rate,
             "ohlc_history": ohlc_data.to_dict("records"),
             "trade_history": trades.to_dict("records"),
-            "results": results,
+            "results": results.model_dump(),
         }
 
         with open(filename, "w") as jsonfile:
