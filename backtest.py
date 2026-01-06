@@ -1,3 +1,4 @@
+import os
 from typing import Any, List, cast
 
 import numpy as np
@@ -5,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
+import regex as re
 from IPython.display import display
 from pandera.errors import SchemaErrors
 from typeguard import typechecked
@@ -81,6 +83,7 @@ class Backtester:
         starting_balance: float,
         ohlc_data: pd.DataFrame,
         currency: str = "INR",
+        symbol: str = "",
         exchange_rate: float = 1.0,
         commission: float = 0.0,
         slippage: float = 0.0,
@@ -91,12 +94,14 @@ class Backtester:
         self.currency: str
         self.balance: float
         self.ohlc_data: pd.DataFrame
+        self.symbol: str = ""
 
         self.set_starting_balance(starting_balance, currency)
         self.set_exchange_rate(exchange_rate)
         self.set_commission(commission)
         self.set_slippage(slippage)
         self.set_ohlc_data(ohlc_data)
+        self.set_symbol(symbol)
 
         self.orders: Orders = Orders()
         self.trades: pd.DataFrame = cast(pd.DataFrame, TradesSchema.example(size=0))
@@ -132,6 +137,13 @@ class Backtester:
             self.ohlc_data = validated_data
         except SchemaErrors as e:
             raise ValueError(f"OHLC data validation failed: {e}") from e
+
+    def set_symbol(self, symbol: str) -> None:
+        if symbol:
+            self.symbol = re.sub(
+                r"[^\w\-]", "", symbol.replace("/", "-").replace("\\", "-")
+            )
+            os.makedirs(self.symbol, exist_ok=True)
 
     def run_backtest(self) -> pd.DataFrame:
         for i in self.ohlc_data.index:
@@ -335,6 +347,11 @@ class Backtester:
         return self.trades
 
     def evaluate_backtest(self, periods_per_year: int = 252) -> Results:
+        if self.trades.empty:
+            raise ValueError(
+                "No trades to evaluate. Make sure the backtest is run first."
+            )
+
         results: dict = dict()
 
         print("RESULTS")
@@ -348,9 +365,11 @@ class Backtester:
         results["biggest_loss"] = biggest_loss
         print(f"Biggest Loss: {biggest_loss:.2f} {self.currency}")
 
+        print("\nWinning Trades\n")
         win_trades = self.trades[self.trades["Net_Profit"] > 0]
         display(win_trades)
 
+        print("\nLosing Trades\n")
         loss_trades = self.trades[self.trades["Net_Profit"] <= 0]
         display(loss_trades)
 
@@ -402,7 +421,7 @@ class Backtester:
         display(trades_by_ordertype)
 
         plot_ordertype = px.bar(trades_by_ordertype, x="Order_Type", y="Net_Profit")
-        plot_ordertype.show("notebook")
+        plot_ordertype.write_html(os.path.join(self.symbol, "trades_by_ordertype.html"))
 
         self.trades["Drawdown"] = (
             self.trades["Cumulative_Profit"].cummax() - self.trades["Cumulative_Profit"]
@@ -411,7 +430,7 @@ class Backtester:
         plot_drawdown = px.line(
             self.trades, x="Close_Time", y="Drawdown", title="Drawdown Over Time"
         )
-        plot_drawdown.show("notebook")
+        plot_drawdown.write_html(os.path.join(self.symbol, "drawdown_curve.html"))
 
         max_drawdown = self.trades["Drawdown"].max()
         results["max_drawdown"] = max_drawdown
@@ -421,7 +440,9 @@ class Backtester:
             self.ohlc_data.index
         )
         equity_curve = equity_curve.ffill().fillna(self.balance)
-        self.plot_equity_curve(equity_curve).show("notebook")
+        self.__plot_equity_curve(equity_curve).write_html(
+            os.path.join(self.symbol, "equity_curve.html")
+        )
 
         periodic_returns = equity_curve.pct_change().fillna(0.0)
 
@@ -461,6 +482,11 @@ class Backtester:
         return Results(**results)
 
     def visualize_backtest(self, num_trades: int = 0) -> None:
+        if self.trades.empty:
+            raise ValueError(
+                "No trades to visualize. Make sure the backtest is run first."
+            )
+
         fig = go.Figure(
             data=[
                 go.Candlestick(
@@ -505,19 +531,31 @@ class Backtester:
                     ),
                 )
 
-        fig.show("notebook")
+        fig.write_html(os.path.join(self.symbol, "backtest.html"))
 
-    def plot_pnl(self) -> go.Figure:
+    def plot_pnl(self) -> None:
+        if self.trades.empty:
+            raise ValueError(
+                "No trades to visualize. Make sure the backtest is run first."
+            )
+
         fig = px.line(
             self.trades, x="Open_Time", y="Cumulative_Profit", title="PnL Graph"
         )
-        return fig
 
-    def plot_balance(self) -> go.Figure:
+        fig.write_html(os.path.join(self.symbol, "pnl_curve.html"))
+
+    def plot_balance(self) -> None:
+        if self.trades.empty:
+            raise ValueError(
+                "No trades to visualize. Make sure the backtest is run first."
+            )
+
         fig = px.line(self.trades, x="Close_Time", y="Balance", title="Balance Graph")
-        return fig
 
-    def plot_equity_curve(self, equity_curve: pd.Series) -> go.Figure:
+        fig.write_html(os.path.join(self.symbol, "balance_curve.html"))
+
+    def __plot_equity_curve(self, equity_curve: pd.Series) -> go.Figure:
         fig = px.line(
             equity_curve,
             x=equity_curve.index,
@@ -527,7 +565,7 @@ class Backtester:
         )
         return fig
 
-    def export_to_json(self, filename: str, symbol: str = "") -> bool:
+    def export_to_json(self, filename: str) -> bool:
         import ujson
 
         ohlc_data = self.ohlc_data.copy()
@@ -539,7 +577,7 @@ class Backtester:
         trades["Close_Time"] = trades["Close_Time"].astype(str)
 
         data = {
-            "symbol": symbol,
+            "symbol": self.symbol,
             "starting_balance": self.balance,
             "exchange_rate": self.exchange_rate,
             "ohlc_history": ohlc_data.to_dict("records"),
@@ -547,6 +585,7 @@ class Backtester:
             "results": results.model_dump(),
         }
 
+        filename = os.path.join(self.symbol, filename)
         with open(filename, "w") as jsonfile:
             ujson.dump(data, jsonfile)
         return True
