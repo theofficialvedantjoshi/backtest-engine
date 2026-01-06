@@ -89,7 +89,6 @@ class Backtester:
         self.commission: float
         self.slippage: float
         self.currency: str
-        self.starting_balance: float
         self.balance: float
         self.ohlc_data: pd.DataFrame
 
@@ -108,7 +107,7 @@ class Backtester:
     ) -> None:
         if starting_balance <= 0.0:
             raise ValueError("Starting balance must be greater than 0.0")
-        self.starting_balance = starting_balance
+        self.balance = starting_balance
         self.currency = currency
 
     def set_exchange_rate(self, exchange_rate: float) -> None:
@@ -276,26 +275,26 @@ class Backtester:
                         self.trades.loc[idx, ["State", "Close_Time", "Close_Price"]] = [
                             "Closed",
                             i,
-                            trade["Stop_Loss"],
+                            min(trade["Stop_Loss"], data["Open"]),
                         ]
                     elif trade["Limit"] <= data["High"] and trade["Limit"] != 0.0:
                         self.trades.loc[idx, ["State", "Close_Time", "Close_Price"]] = [
                             "Closed",
                             i,
-                            trade["Limit"],
+                            max(trade["Limit"], data["Open"]),
                         ]
                 elif trade["Order_Type"] == OrderType.SELL.value:
                     if trade["Stop_Loss"] <= data["High"] and trade["Stop_Loss"] != 0.0:
                         self.trades.loc[idx, ["State", "Close_Time", "Close_Price"]] = [
                             "Closed",
                             i,
-                            trade["Stop_Loss"],
+                            max(trade["Stop_Loss"], data["Open"]),
                         ]
                     elif trade["Limit"] >= data["Low"] and trade["Limit"] != 0.0:
                         self.trades.loc[idx, ["State", "Close_Time", "Close_Price"]] = [
                             "Closed",
                             i,
-                            trade["Limit"],
+                            min(trade["Limit"], data["Open"]),
                         ]
 
         final_time = self.ohlc_data.index[-1]
@@ -331,9 +330,7 @@ class Backtester:
         self.trades["Commission"] = self.commission * self.trades["Volume"]
         self.trades["Net_Profit"] = self.trades["Profit"] + self.trades["Commission"]
         self.trades["Cumulative_Profit"] = self.trades["Net_Profit"].cumsum()
-        self.trades["Balance"] = (
-            self.starting_balance + self.trades["Cumulative_Profit"]
-        )
+        self.trades["Balance"] = self.balance + self.trades["Cumulative_Profit"]
 
         return self.trades
 
@@ -423,7 +420,7 @@ class Backtester:
         equity_curve = self.trades.set_index("Close_Time")["Balance"].reindex(
             self.ohlc_data.index
         )
-        equity_curve = equity_curve.ffill().fillna(self.starting_balance)
+        equity_curve = equity_curve.ffill().fillna(self.balance)
         self.plot_equity_curve(equity_curve).show("notebook")
 
         periodic_returns = equity_curve.pct_change().fillna(0.0)
@@ -455,7 +452,7 @@ class Backtester:
         results["total_net_profit"] = total_net_profit
         print(f"Total Net Profit: {total_net_profit:.2f} {self.currency}")
 
-        final_balance = self.starting_balance + total_net_profit
+        final_balance = self.balance + total_net_profit
         results["final_balance"] = final_balance
         print(f"Final Balance: {final_balance:.2f} {self.currency}")
 
@@ -543,7 +540,7 @@ class Backtester:
 
         data = {
             "symbol": symbol,
-            "starting_balance": self.starting_balance,
+            "starting_balance": self.balance,
             "exchange_rate": self.exchange_rate,
             "ohlc_history": ohlc_data.to_dict("records"),
             "trade_history": trades.to_dict("records"),
