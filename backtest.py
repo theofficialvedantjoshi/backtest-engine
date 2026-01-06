@@ -96,18 +96,18 @@ class Backtester:
         self.ohlc_data: pd.DataFrame
         self.symbol: str = ""
 
-        self.set_starting_balance(starting_balance, currency)
-        self.set_exchange_rate(exchange_rate)
-        self.set_commission(commission)
-        self.set_slippage(slippage)
-        self.set_ohlc_data(ohlc_data)
-        self.set_symbol(symbol)
+        self.__set_starting_balance(starting_balance, currency)
+        self.__set_exchange_rate(exchange_rate)
+        self.__set_commission(commission)
+        self.__set_slippage(slippage)
+        self.__set_ohlc_data(ohlc_data)
+        self.__set_symbol(symbol)
 
         self.orders: Orders = Orders()
         self.trades: pd.DataFrame = cast(pd.DataFrame, TradesSchema.example(size=0))
         self.trades.style.set_caption("TRADES")
 
-    def set_starting_balance(
+    def __set_starting_balance(
         self, starting_balance: float, currency: str = "INR"
     ) -> None:
         if starting_balance <= 0.0:
@@ -115,30 +115,30 @@ class Backtester:
         self.balance = starting_balance
         self.currency = currency
 
-    def set_exchange_rate(self, exchange_rate: float) -> None:
+    def __set_exchange_rate(self, exchange_rate: float) -> None:
         if exchange_rate <= 0.0:
             raise ValueError("Exchange rate must be greater than 0.0")
         self.exchange_rate = exchange_rate
 
-    def set_commission(self, commission: float) -> None:
+    def __set_commission(self, commission: float) -> None:
         if commission < 0.0:
             raise ValueError("Commission must be greater than or equal to 0.0")
         self.commission = -1.0 * commission
 
-    def set_slippage(self, slippage: float) -> None:
+    def __set_slippage(self, slippage: float) -> None:
         if 0.0 <= slippage <= 1.0:
             self.slippage = slippage
         else:
             raise ValueError("Slippage must be between 0.0 and 1")
 
-    def set_ohlc_data(self, ohlc_data: pd.DataFrame) -> None:
+    def __set_ohlc_data(self, ohlc_data: pd.DataFrame) -> None:
         try:
             validated_data = OHLCSchema.validate(ohlc_data.copy())
             self.ohlc_data = validated_data
         except SchemaErrors as e:
             raise ValueError(f"OHLC data validation failed: {e}") from e
 
-    def set_symbol(self, symbol: str) -> None:
+    def __set_symbol(self, symbol: str) -> None:
         if symbol:
             self.symbol = re.sub(
                 r"[^\w\-]", "", symbol.replace("/", "-").replace("\\", "-")
