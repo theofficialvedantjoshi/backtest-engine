@@ -10,6 +10,7 @@ A simple, event-driven backtesting engine for trading strategies in Python. This
 - Visualise PnL, Balance, Equity, Drawdown, Winning and Losing Trades
 - Evaluate performance with Profit Factor, Drawdown, Sharpe Ratio, Sortino Ratio etc.
 - Time based Trade logging
+- Stress test strategies using increased slippage, increased comissions and simulating execution delays.
 
 ## Setup
 
