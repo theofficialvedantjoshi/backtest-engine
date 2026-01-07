@@ -11,7 +11,7 @@ from IPython.display import display
 from pandera.errors import SchemaErrors
 from typeguard import typechecked
 
-from models import (
+from src.models import (
     EditSignal,
     EntrySignal,
     ExitSignal,
@@ -26,6 +26,7 @@ from models import (
 pio.templates.default = "plotly_dark"
 
 
+@typechecked
 class Orders:
 
     def __init__(self):
@@ -157,7 +158,7 @@ class Backtester:
                 and data["Signal_Volume"] > 0
             ):  # Open Long Position
                 self.orders.open_trade(
-                    volume=data["Signal_Volume"],
+                    volume=int(data["Signal_Volume"]),
                     order_type=OrderType.BUY,
                     stop_loss=float(data["Signal_Stop_Loss"]),
                     limit=float(data["Signal_Limit"]),
@@ -168,7 +169,7 @@ class Backtester:
                 and data["Signal_Volume"] > 0
             ):  # Open Short Position
                 self.orders.open_trade(
-                    volume=data["Signal_Volume"],
+                    volume=int(data["Signal_Volume"]),
                     order_type=OrderType.SELL,
                     stop_loss=float(data["Signal_Stop_Loss"]),
                     limit=float(data["Signal_Limit"]),
