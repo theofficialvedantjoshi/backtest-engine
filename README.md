@@ -43,3 +43,5 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for package management
 - [X] Add support for slippage.
 - [ ] Add support for execution delay.
 - [ ] Improve error handling and logging.
+
+**NOTE**: The backtester doesn't check for look ahead bias. You must ensure that your signals are generated using only past data.
